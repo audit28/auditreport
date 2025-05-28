@@ -1,0 +1,1947 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>অডিট রিপোর্ট জেনারেটর</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-docx-js/0.3.1/html-docx.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js" crossorigin="anonymous"></script>
+
+    <script>
+        // --- Library Availability Check & Global Exposure (Enhanced) ---
+        // This script will run AFTER all CDN scripts are theoretically loaded.
+        // It helps ensure that the libraries are indeed available in the window scope.
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check for jsPDF
+            if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined') {
+                console.error("Error: jsPDF library not loaded or exposed globally. PDF generation might fail.");
+                alert("PDF তৈরির জন্য প্রয়োজনীয় jsPDF লাইব্রেরি লোড হয়নি।");
+            }
+
+            // Check for html2canvas
+            if (typeof window.html2canvas === 'undefined') {
+                console.error("Error: html2canvas library not loaded or exposed globally. PDF generation might be affected.");
+                alert("PDF তৈরির জন্য প্রয়োজনীয় html2canvas লাইব্রেরি লোড হয়নি।");
+            }
+
+            // Check for FileSaver.js
+            if (typeof window.saveAs === 'undefined') {
+                console.error("Error: FileSaver.js library not loaded or exposed globally. Word/Excel saving might fail.");
+                alert("ডাউনলোডের জন্য প্রয়োজনীয় FileSaver.js লাইব্রেরি লোড হয়নি।");
+            }
+
+            // Check for html-docx-js (more robust checks)
+            let htmlDocxGlobal = null;
+            if (typeof window.htmlDocx !== 'undefined') {
+                htmlDocxGlobal = window.htmlDocx;
+            } else if (typeof window.HTML_DOCX !== 'undefined') { // Common fallback name
+                htmlDocxGlobal = window.HTML_DOCX;
+            } else if (typeof window.htmlDocx_js !== 'undefined') { // Another potential fallback
+                htmlDocxGlobal = window.htmlDocx_js;
+            }
+
+            if (htmlDocxGlobal === null || typeof htmlDocxGlobal.asBlob !== 'function') {
+                console.error("Error: html-docx-js library not loaded, not exposed globally, or 'asBlob' function is missing. Word generation will fail.");
+                alert("অডিট রিপোর্ট জেনারেটর আপনাকে স্বাগতম");
+                window.htmlDocx = { asBlob: function() { console.error("htmlDocx.asBlob is a placeholder because the library failed to load."); return new Blob(); } }; // Provide a dummy to prevent immediate errors
+            } else {
+                window.htmlDocx = htmlDocxGlobal; // Ensure it's consistently window.htmlDocx
+            }
+
+            // Check for XLSX
+            if (typeof window.XLSX === 'undefined') {
+                console.error("Error: XLSX library not loaded or exposed globally. Excel generation might fail.");
+                alert("Excel তৈরির জন্য প্রয়োজনীয় XLSX লাইব্রেরি লোড হয়নি।");
+            }
+
+            // Initial setup for observation sections
+            // Ensure at least one section exists when the page loads, or if cleared by import, re-add
+            if (document.getElementById('observationSections').children.length === 0) {
+                 addObservationSection(); // Add a default section if none exist
+            }
+            if (document.getElementById('customTableSections').children.length === 0) {
+                 addCustomObservationSection(); // Add a default section if none exist
+            }
+
+            // Initial setup for the first observation and custom observation sections on load
+            changeProgramObservationSubtype('observation1');
+            generateCustomTableInput('customObservation1'); // Call only to initialize headers based on current input
+
+            const initialFinanceTable = document.getElementById('observation1FinanceTable');
+            if (initialFinanceTable) initialFinanceTable.style.minWidth = '600px';
+
+            const initialCustomTable = document.getElementById('customObs1Table');
+            if (initialCustomTable) initialCustomTable.style.minWidth = '500px';
+
+            // Initial auditor setup
+            if (document.getElementById('auditorInputs').children.length === 0) {
+                addAuditor(); // Add a default auditor section if none exist
+            }
+        });
+    </script>
+    
+    <style>
+        /* Your existing CSS remains here */
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'SolaimanLipi', Arial, sans-serif;
+            margin: 0;
+            padding: 10px; /* Reduced padding for mobile first */
+            background-color: #f5f5f5;
+            font-size: 16px; /* Base font size */
+            line-height: 1.6;
+        }
+        @media (min-width: 768px) {
+            body {
+                padding: 20px; /* Original padding for larger screens */
+            }
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 15px; /* Adjusted padding */
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        @media (min-width: 768px) {
+            .container {
+                padding: 20px; /* Original padding */
+            }
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            font-size: 1.8em; /* Relative unit */
+            margin-bottom: 0.8em;
+        }
+        h2 {
+            font-size: 1.5em;
+            color: #34495e;
+            margin-top: 1em;
+            margin-bottom: 0.6em;
+        }
+        h3 {
+            font-size: 1.2em;
+            color: #7f8c8d;
+            margin-top: 0.8em;
+            margin-bottom: 0.5em;
+        }
+        @media (min-width: 768px) {
+            h1 {
+                font-size: 2.2em; /* Larger for desktop */
+            }
+            h2 {
+                font-size: 1.8em;
+            }
+            h3 {
+                font-size: 1.4em;
+            }
+        }
+        .input-section {
+            margin-bottom: 15px;
+        }
+        textarea, input[type="text"], input[type="number"], input[type="date"], input[type="email"], input[type="password"], select {
+            width: 100%;
+            padding: 10px; /* Increased padding for touch */
+            margin-top: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1em; /* Inherit from body or set specific */
+            font-family: 'SolaimanLipi', Arial, sans-serif; /* Ensure font consistency */
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 18px; /* Slightly larger for touch */
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1em;
+            font-family: 'SolaimanLipi', Arial, sans-serif;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        /* Main action button */
+        button[onclick="generateReport()"] {
+            display: block;
+            margin: 20px auto;
+        }
+
+        #reportOutput {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin-top: 20px;
+            background-color: #f9f9f9;
+            display: none;
+        }
+        .section {
+            margin-bottom: 25px;
+            padding: 15px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            background-color: #fafafa;
+        }
+        .table-responsive-wrapper {
+            overflow-x: auto;
+            margin-top: 15px;
+            margin-bottom: 15px;
+        }
+        .table-responsive-wrapper > table {
+            width: 100%; /* Table attempts to fill the wrapper */
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            word-wrap: break-word;
+            font-size: 0.9em;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .observation-section {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px dashed #ccc;
+            border-radius: 4px;
+        }
+        .add-btn {
+            background-color: #27ae60;
+        }
+        .remove-btn {
+            background-color: #e74c3c;
+        }
+        .button-group {
+            display: flex;
+            flex-wrap: wrap; /* Allow buttons to wrap */
+            gap: 10px; /* Space between buttons */
+            margin-top: 15px;
+            margin-bottom: 10px;
+        }
+        .button-group button {
+            margin: 0; /* Remove individual margins if handled by gap */
+            flex-grow: 1; /* Allow buttons to grow and fill space */
+            font-size: 0.9em;
+             padding: 10px 12px;
+        }
+
+        .date-range {
+            display: flex;
+            flex-wrap: wrap; /* Allow wrapping */
+            gap: 10px;
+            align-items: center;
+        }
+        .date-range input[type="date"] {
+            width: auto; /* Keep this for date inputs */
+            flex-grow: 1; /* Allow them to grow if space */
+            min-width: 130px; /* Ensure they are not too small */
+        }
+        .date-range span {
+            margin: 5px 0; /* Add some margin when wrapped */
+            padding: 0 5px;
+        }
+        .wide-input {
+            min-width: 120px; 
+        }
+        .download-btns {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+        }
+        .download-btns button {
+            margin: 5px; /* Adjust margin for wrapped items */
+            flex-grow: 1; /* Allow buttons to grow */
+            min-width: 120px; /* Minimum tap target */
+        }
+        .pdf-btn {
+            background-color: #e74c3c;
+        }
+        .word-btn {
+            background-color: #2c3e50;
+        }
+        .excel-btn {
+            background-color: #27ae60;
+        }
+        .observation-type, .program-observation-subtype {
+            margin-bottom: 10px;
+        }
+        .finance-fields {
+            display: none;
+            margin-top: 10px;
+        }
+        /* New styles for Import/Export */
+        .file-operation-btns {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .file-operation-btns button {
+            background-color: #f39c12; /* Orange color */
+            min-width: 150px;
+        }
+        .file-operation-btns button:hover {
+            background-color: #e67e22; /* Darker orange */
+        }
+        .file-operation-btns input[type="file"] {
+            display: none; /* Hide default file input */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>অডিট রিপোর্ট জেনারেটর</h1>
+        
+        <div class="file-operation-btns">
+            <button onclick="exportReportData()">রিপোর্ট এক্সপোর্ট করুন</button>
+            <input type="file" id="importFile" accept=".json" onchange="importReportData(event)">
+            <button onclick="document.getElementById('importFile').click()">রিপোর্ট ইম্পোর্ট করুন</button>
+        </div>
+
+        <div class="section">
+            <h2>প্রকল্প তথ্য</h2>
+            <div class="input-section">
+                <label for="branchName">শাখার নাম:</label>
+                <input type="text" id="branchName" placeholder="শাখার নাম">
+            </div>
+            <div class="input-section">
+                <label for="areaName">এরিয়ার নাম:</label>
+                <input type="text" id="areaName" placeholder="এরিয়ার নাম">
+            </div>
+            <div class="input-section">
+                <label for="zoneName">জোন নাম:</label>
+                <input type="text" id="zoneName" placeholder="জোন নাম">
+            </div>
+            <div class="input-section">
+                <label for="projectName">প্রকল্পের নাম:</label>
+                <input type="text" id="projectName" placeholder="প্রকল্পের নাম">
+            </div>
+            <div class="input-section">
+                <label for="projectPeriod">প্রকল্পের সময় (পিরিয়ড):</label>
+                <div class="date-range">
+                    <input type="date" id="projectStartDate">
+                    <span>থেকে</span>
+                    <input type="date" id="projectEndDate">
+                </div>
+            </div>
+            <div class="input-section">
+                <label for="auditDateRange">নিরীক্ষার তারিখ (থেকে):</label>
+                <div class="date-range">
+                    <input type="date" id="auditStartDate">
+                    <span>থেকে</span>
+                    <input type="date" id="auditEndDate">
+                </div>
+            </div>
+            <div class="input-section">
+                <label for="reportSubmissionDate">নিরীক্ষা প্রতিবেদনের দাখিলের তারিখ:</label>
+                <input type="date" id="reportSubmissionDate">
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>অডিটরদের তথ্য</h2>
+            <div id="auditorInputs">
+                <div class="auditor-input">
+                    <h3>অডিটর 1</h3>
+                    <div class="input-section">
+                        <label for="auditor1Name">নাম:</label>
+                        <input type="text" id="auditor1Name" placeholder="অডিটরের নাম">
+                    </div>
+                    <div class="input-section">
+                        <label for="auditor1Designation">পদবী:</label>
+                        <input type="text" id="auditor1Designation" placeholder="পদবী">
+                    </div>
+                </div>
+            </div>
+            <button onclick="addAuditor()" class="add-btn" style="display: block; margin-left:auto; margin-right:auto;">অডিটর যোগ করুন (সর্বোচ্চ ৬ জন)</button>
+        </div>
+        
+        <div class="section">
+            <h2>পর্যবেক্ষণ</h2>
+            <div id="observationSections">
+                <div class="observation-section" id="observation1">
+                    <div class="observation-type">
+                        <label for="observation1Type">পর্যবেক্ষণের ধরন:</label>
+                        <select id="observation1Type" onchange="changeObservationType('observation1')">
+                            <option value="program">প্রোগ্রাম পর্যবেক্ষণ</option>
+                            <option value="finance">ফাইন্যান্স পর্যবেক্ষণ</option>
+                        </select>
+                    </div>
+                    
+                    <div class="program-fields" id="observation1ProgramFields">
+                        <div class="program-observation-subtype">
+                            <label for="observation1ProgramSubtype">প্রোগ্রাম পর্যবেক্ষণের প্রকার:</label>
+                            <select id="observation1ProgramSubtype" onchange="changeProgramObservationSubtype('observation1')">
+                                <option value="loanDeficit">ঋন ঘাটতি</option>
+                                <option value="savingsDeficit">সঞ্চয় ঘাটতি</option>
+                                <option value="dpsDeficit">ডিপিএস ঘাটতি</option>
+                                <option value="otherDeficit">অন্যন্য ঘাটতি</option>
+                                <option value="generalObservation">জেনারেল অবজারভেশন</option>
+                            </select>
+                        </div>
+                        <div class="input-section">
+                            <label for="observation1Title">শিরোনাম:</label>
+                            <input type="text" id="observation1Title" placeholder="শিরোনাম">
+                        </div>
+                        <div class="table-responsive-wrapper">
+                            <table id="observation1Table">
+                                <thead>
+                                    <tr id="observation1TableHeader"></tr>
+                               </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="finance-fields" id="observation1FinanceFields">
+                        <div class="input-section">
+                            <label for="observation1FinanceTitle">শিরোনাম:</label>
+                            <input type="text" id="observation1FinanceTitle" placeholder="শিরোনাম">
+                        </div>
+                        <div class="table-responsive-wrapper">
+                            <table id="observation1FinanceTable">
+                                <thead>
+                                    <tr>
+                                        <th style="width:15%">ভাউচার নং</th>
+                                        <th style="width:15%">ভাউচার তারিখ</th>
+                                        <th style="width:15%">ভাউচারের পরিমান</th>
+                                        <th style="width:15%">বিলের তারিখ</th>
+                                        <th style="width:15%">বিলের পরিমান</th>
+                                        <th style="width:25%">মন্তব্য</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><input type="text" id="finance1VoucherNo1" class="wide-input"></td>
+                                        <td><input type="date" id="finance1VoucherDate1"></td>
+                                        <td><input type="number" id="finance1VoucherAmount1"></td>
+                                        <td><input type="date" id="finance1BillDate1"></td>
+                                        <td><input type="number" id="finance1BillAmount1"></td>
+                                        <td><input type="text" id="finance1Comment1"></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button onclick="addObservationRow('observation1')" class="add-btn">সারি যোগ করুন</button>
+                        <button onclick="removeObservationRow('observation1')" class="remove-btn">সর্বশেষ সারি মুছুন</button>
+                        <button onclick="removeObservationSection('observation1')" class="remove-btn remove-this-observation-btn">এই পর্যবেক্ষণ মুছুন</button>
+                    </div>
+                </div>
+            </div>
+            <button onclick="addObservationSection()" class="add-btn" style="display: block; margin-left:auto; margin-right:auto;">নতুন পর্যবেক্ষণ যোগ করুন</button>
+        </div>
+
+        <div class="section">
+            <h2>কাস্টম টেবিল পর্যবেক্ষণ</h2>
+            <div id="customTableSections">
+                <div class="observation-section" id="customObservation1">
+                    <div class="input-section">
+                        <label for="customObs1Title">শিরোনাম:</label>
+                        <input type="text" id="customObs1Title" placeholder="কাস্টম টেবিলের শিরোনাম">
+                    </div>
+                    <div class="input-section">
+                        <label for="customObs1Headers">কলাম হেডার (কমা দ্বারা বিভক্ত করুন, যেমন: কলাম ১, কলাম ২, কলাম ৩):</label>
+                        <input type="text" id="customObs1Headers" placeholder="হেডার দিন" oninput="updateCustomTableHeaders('customObservation1')">
+                    </div>
+                    <div class="table-responsive-wrapper">
+                        <table id="customObs1Table" style="display:none;">
+                            <thead>
+                                <tr id="customObs1TableHeader"></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                    <div class="button-group">
+                        <button onclick="addCustomRow('customObservation1')" class="add-btn add-custom-row-btn" style="display:none;">সারি যোগ করুন</button>
+                        <button onclick="removeCustomRow('customObservation1')" class="remove-btn remove-custom-row-btn" style="display:none;">সর্বশেষ সারি মুছুন</button>
+                        <button onclick="removeObservationSection('customObservation1')" class="remove-btn remove-this-observation-btn">এই পর্যবেক্ষণ মুছুন</button>
+                    </div>
+                </div>
+            </div>
+            <button onclick="addCustomObservationSection()" class="add-btn" style="display: block; margin-left:auto; margin-right:auto;">নতুন কাস্টম টেবিল যোগ করুন</button>
+        </div>
+        
+        <button onclick="generateReport()">রিপোর্ট জেনারেট করুন</button>
+        
+        <div id="reportOutput"></div>
+        <div class="download-btns" id="downloadBtns" style="display:none;">
+            <button onclick="downloadPDF()" class="pdf-btn">PDF ডাউনলোড</button>
+            <button onclick="downloadWord()" class="word-btn">Word ডাউনলোড</button>
+            <button onclick="downloadExcel()" class="excel-btn">Excel ডাউনলোড</button>
+        </div>
+    </div>
+    <script>
+        let auditorCount = 1;
+        let observationCount = 1;
+        let customObservationCount = 1; 
+
+        // DOMContentLoaded has been moved to the head script for library checks
+
+        function addAuditor() {
+            // Check current number of auditor input groups
+            const currentAuditors = document.querySelectorAll('#auditorInputs .auditor-input').length;
+            if (currentAuditors >= 6) {
+                alert("সর্বোচ্চ ৬ জন অডিটর যোগ করা যাবে");
+                return;
+            }
+            
+            auditorCount = currentAuditors + 1; // Ensure auditorCount is always aligned with actual elements
+            const newAuditor = document.createElement('div');
+            newAuditor.className = 'auditor-input';
+            newAuditor.innerHTML = `
+                <h3>অডিটর ${auditorCount}</h3>
+                <div class="input-section">
+                    <label for="auditor${auditorCount}Name">নাম:</label>
+                    <input type="text" id="auditor${auditorCount}Name" placeholder="অডিটরের নাম">
+                </div>
+                <div class="input-section">
+                    <label for="auditor${auditorCount}Designation">পদবী:</label>
+                    <input type="text" id="auditor${auditorCount}Designation" placeholder="পদবী">
+                </div>
+            `;
+            document.getElementById('auditorInputs').appendChild(newAuditor);
+        }
+        
+        function addObservationSection() {
+            // Check current number of observation sections
+            const currentObservations = document.querySelectorAll('#observationSections .observation-section').length;
+            observationCount = currentObservations + 1; // Ensure observationCount is always aligned with actual elements
+
+            const newSection = document.createElement('div');
+            newSection.className = 'observation-section';
+            newSection.id = `observation${observationCount}`;
+            newSection.innerHTML = `
+                <div class="observation-type">
+                    <label for="observation${observationCount}Type">পর্যবেক্ষণের ধরন:</label>
+                    <select id="observation${observationCount}Type" onchange="changeObservationType('observation${observationCount}')">
+                        <option value="program">প্রোগ্রাম পর্যবেক্ষণ</option>
+                        <option value="finance">ফাইন্যান্স পর্যবেক্ষণ</option>
+                    </select>
+                </div>
+                
+                <div class="program-fields" id="observation${observationCount}ProgramFields">
+                    <div class="program-observation-subtype">
+                        <label for="observation${observationCount}ProgramSubtype">প্রোগ্রাম পর্যবেক্ষণের প্রকার:</label>
+                        <select id="observation${observationCount}ProgramSubtype" onchange="changeProgramObservationSubtype('observation${observationCount}')">
+                            <option value="loanDeficit">ঋন ঘাটতি</option>
+                            <option value="savingsDeficit">সঞ্চয় ঘাটতি</option>
+                            <option value="dpsDeficit">ডিপিএস ঘাটতি</option>
+                            <option value="otherDeficit">অন্যন্য ঘাটতি</option>
+                            <option value="generalObservation">জেনারেল অবজারভেশন</option>
+                        </select>
+                    </div>
+                    <div class="input-section">
+                        <label for="observation${observationCount}Title">শিরোনাম:</label>
+                        <input type="text" id="observation${observationCount}Title" placeholder="শিরোনাম">
+                    </div>
+                    <div class="table-responsive-wrapper">
+                        <table id="observation${observationCount}Table">
+                            <thead>
+                                <tr id="observation${observationCount}TableHeader"></tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="finance-fields" id="observation${observationCount}FinanceFields" style="display:none;">
+                    <div class="input-section">
+                        <label for="observation${observationCount}FinanceTitle">শিরোনাম:</label>
+                        <input type="text" id="observation${observationCount}FinanceTitle" placeholder="শিরোনাম">
+                    </div>
+                    <div class="table-responsive-wrapper">
+                        <table id="observation${observationCount}FinanceTable">
+                            <thead>
+                                <tr>
+                                    <th style="width:15%">ভাউচার নং</th>
+                                    <th style="width:15%">ভাউচার তারিখ</th>
+                                    <th style="width:15%">ভাউচারের পরিমান</th>
+                                    <th style="width:15%">বিলের তারিখ</th>
+                                    <th style="width:15%">বিলের পরিমান</th>
+                                    <th style="width:25%">মন্তব্য</th>
+                                    </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><input type="text" id="finance${observationCount}VoucherNo1" class="wide-input"></td>
+                                    <td><input type="date" id="finance${observationCount}VoucherDate1"></td>
+                                    <td><input type="number" id="finance${observationCount}VoucherAmount1"></td>
+                                    <td><input type="date" id="finance${observationCount}BillDate1"></td>
+                                    <td><input type="number" id="finance${observationCount}BillAmount1"></td>
+                                    <td><input type="text" id="finance${observationCount}Comment1"></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button onclick="addObservationRow('observation${observationCount}')" class="add-btn">সারি যোগ করুন</button>
+                    <button onclick="removeObservationRow('observation${observationCount}')" class="remove-btn">সর্বশেষ সারি মুছুন</button>
+                    <button onclick="removeObservationSection('observation${observationCount}')" class="remove-btn remove-this-observation-btn">এই পর্যবেক্ষণ মুছুন</button>
+                </div>
+            `;
+            document.getElementById('observationSections').appendChild(newSection);
+            changeProgramObservationSubtype(`observation${observationCount}`); // Initialize the default program subtype table
+            const financeTableElement = newSection.querySelector(`#observation${observationCount}FinanceTable`);
+            if (financeTableElement) {
+                financeTableElement.style.minWidth = '600px'; 
+            }
+        }
+        
+        function changeObservationType(sectionId) {
+            const obsNum = sectionId.replace('observation', '');
+            const type = document.getElementById(`observation${obsNum}Type`).value;
+            
+            if (type === 'program') {
+                document.getElementById(`${sectionId}ProgramFields`).style.display = 'block';
+                document.getElementById(`${sectionId}FinanceFields`).style.display = 'none';
+                changeProgramObservationSubtype(sectionId); // Ensure program table is correctly set up
+            } else {
+                document.getElementById(`${sectionId}ProgramFields`).style.display = 'none';
+                document.getElementById(`${sectionId}FinanceFields`).style.display = 'block';
+            }
+        }
+
+        function changeProgramObservationSubtype(sectionId) {
+            const obsNum = sectionId.replace('observation', '');
+            const subType = document.getElementById(`observation${obsNum}ProgramSubtype`).value;
+            const tableHeader = document.getElementById(`observation${obsNum}TableHeader`);
+            const tableBody = document.getElementById(`observation${obsNum}Table`).getElementsByTagName('tbody')[0];
+            const tableElement = document.getElementById(`observation${obsNum}Table`);
+            
+            let headers = [];
+            let rowTemplate = '';
+
+            tableBody.innerHTML = ''; // Clear existing rows
+            
+            if (subType === 'loanDeficit' || subType === 'savingsDeficit' || subType === 'dpsDeficit' || subType === 'otherDeficit') {
+                headers = [
+                    "কর্মীর নাম", "সমিতি", "কোড", "সদস্য", "পাশ বই", "কালেকশন সীট", "ঘাটতি", 
+                    "জমার তারিখ", "জমার পরিমান", "অবশিষ্ট", "মন্তব্য"
+                ];
+                rowTemplate = `
+                    <td><input type="text" id="obs${obsNum}WorkerName{rowNum}" class="wide-input"></td>
+                    <td><input type="text" id="obs${obsNum}Society{rowNum}" class="wide-input"></td>
+                    <td><input type="text" id="obs${obsNum}Code{rowNum}" class="wide-input"></td>
+                    <td><input type="text" id="obs${obsNum}Member{rowNum}" class="wide-input"></td>
+                    <td><input type="number" id="obs${obsNum}PassBook{rowNum}" class="wide-input" oninput="calculateDeficit('observation${obsNum}', {rowNum}, '${subType}')"></td>
+                    <td><input type="number" id="obs${obsNum}CollectionSheet{rowNum}" class="wide-input" oninput="calculateDeficit('observation${obsNum}', {rowNum}, '${subType}')"></td>
+                    <td><input type="number" id="obs${obsNum}Deficit{rowNum}" class="wide-input" readonly></td>
+                    <td><input type="date" id="obs${obsNum}DepositDate{rowNum}"></td>
+                    <td><input type="number" id="obs${obsNum}DepositAmount{rowNum}" class="wide-input" oninput="calculateRemaining('observation${obsNum}', {rowNum}, '${subType}')"></td>
+                    <td><input type="number" id="obs${obsNum}Remaining{rowNum}" class="wide-input" readonly></td>
+                    <td><input type="text" id="obs${obsNum}Comment{rowNum}" class="wide-input"></td>
+                `;
+                tableElement.style.minWidth = '1000px';
+            } else if (subType === 'generalObservation') {
+                headers = [
+                    "সমিতি", "কোড", "সদস্য", "বিতরণ তারিখ", "বিতরণ পরিমান", 
+                    "ঋণ স্থিতি", "সঞ্চয় স্থিতি", "পূর্বের ঋণ পরিমান", "পূর্বের ঋণ স্থিতি", "মন্তব্য"
+                ];
+                rowTemplate = `
+                    <td><input type="text" id="obs${obsNum}Society{rowNum}" class="wide-input"></td>
+                    <td><input type="text" id="obs${obsNum}Code{rowNum}" class="wide-input"></td>
+                    <td><input type="text" id="obs${obsNum}Member{rowNum}" class="wide-input"></td>
+                    <td><input type="date" id="obs${obsNum}DistDate{rowNum}"></td>
+                    <td><input type="number" id="obs${obsNum}DistAmount{rowNum}"></td>
+                    <td><input type="number" id="obs${obsNum}LoanBalance{rowNum}"></td>
+                    <td><input type="number" id="obs${obsNum}SavingsBalance{rowNum}"></td>
+                    <td><input type="number" id="obs${obsNum}PrevLoanAmount{rowNum}"></td>
+                    <td><input type="number" id="obs${obsNum}PrevLoanBalance{rowNum}"></td>
+                    <td><textarea id="obs${obsNum}Comment{rowNum}" oninput="this.style.height='auto'; this.style.height=(this.scrollHeight)+'px';" rows="1"></textarea></td>
+                `;
+                tableElement.style.minWidth = '800px';
+            } else {
+                 tableElement.style.minWidth = 'auto'; // Reset min-width for other/unknown types
+            }
+
+            tableHeader.innerHTML = headers.map(h => `<th style="width:${100/headers.length}%">${h}</th>`).join('');
+            // Add one initial row if headers exist
+            if (headers.length > 0 && tableBody.rows.length === 0) { // Only add if no rows exist
+                const newRow = tableBody.insertRow();
+                newRow.innerHTML = rowTemplate.replace(/{rowNum}/g, 1);
+            }
+        }
+        
+        function addObservationRow(sectionId) {
+            const obsNum = sectionId.replace('observation', '');
+            const type = document.getElementById(`observation${obsNum}Type`).value;
+            
+            if (type === 'program') {
+                const subType = document.getElementById(`observation${obsNum}ProgramSubtype`).value;
+                const table = document.getElementById(`observation${obsNum}Table`);
+                const tbody = table.getElementsByTagName('tbody')[0];
+                const rowCount = tbody.rows.length + 1;
+                
+                let rowTemplate = '';
+                if (subType === 'loanDeficit' || subType === 'savingsDeficit' || subType === 'dpsDeficit' || subType === 'otherDeficit') {
+                    rowTemplate = `
+                        <td><input type="text" id="obs${obsNum}WorkerName${rowCount}" class="wide-input"></td>
+                        <td><input type="text" id="obs${obsNum}Society${rowCount}" class="wide-input"></td>
+                        <td><input type="text" id="obs${obsNum}Code${rowCount}" class="wide-input"></td>
+                        <td><input type="text" id="obs${obsNum}Member${rowCount}" class="wide-input"></td>
+                        <td><input type="number" id="obs${obsNum}PassBook${rowCount}" class="wide-input" oninput="calculateDeficit('observation${obsNum}', ${rowCount}, '${subType}')"></td>
+                        <td><input type="number" id="obs${obsNum}CollectionSheet${rowCount}" class="wide-input" oninput="calculateDeficit('observation${obsNum}', ${rowCount}, '${subType}')"></td>
+                        <td><input type="number" id="obs${obsNum}Deficit${rowCount}" class="wide-input" readonly></td>
+                        <td><input type="date" id="obs${obsNum}DepositDate${rowCount}"></td>
+                        <td><input type="number" id="obs${obsNum}DepositAmount${rowCount}" class="wide-input" oninput="calculateRemaining('observation${obsNum}', ${rowCount}, '${subType}')"></td>
+                        <td><input type="number" id="obs${obsNum}Remaining${rowCount}" class="wide-input" readonly></td>
+                        <td><input type="text" id="obs${obsNum}Comment${rowCount}" class="wide-input"></td>
+                    `;
+                } else if (subType === 'generalObservation') {
+                    rowTemplate = `
+                        <td><input type="text" id="obs${obsNum}Society${rowCount}" class="wide-input"></td>
+                        <td><input type="text" id="obs${obsNum}Code${rowCount}" class="wide-input"></td>
+                        <td><input type="text" id="obs${obsNum}Member${rowCount}" class="wide-input"></td>
+                        <td><input type="date" id="obs${obsNum}DistDate${rowCount}"></td>
+                        <td><input type="number" id="obs${obsNum}DistAmount${rowCount}"></td>
+                        <td><input type="number" id="obs${obsNum}LoanBalance${rowCount}"></td>
+                        <td><input type="number" id="obs${obsNum}SavingsBalance${rowCount}"></td>
+                        <td><input type="number" id="obs${obsNum}PrevLoanAmount${rowCount}"></td>
+                        <td><input type="number" id="obs${obsNum}PrevLoanBalance${rowCount}"></td>
+                        <td><textarea id="obs${obsNum}Comment${rowCount}" oninput="this.style.height='auto'; this.style.height=(this.scrollHeight)+'px';" rows="1"></textarea></td>
+                    `;
+                }
+                const newRow = tbody.insertRow();
+                newRow.innerHTML = rowTemplate;
+
+            } else { 
+                const table = document.getElementById(`observation${obsNum}FinanceTable`);
+                const tbody = table.getElementsByTagName('tbody')[0];
+                const rowCount = tbody.rows.length + 1;
+                
+                const newRow = tbody.insertRow();
+                newRow.innerHTML = `
+                    <td><input type="text" id="finance${obsNum}VoucherNo${rowCount}" class="wide-input"></td>
+                    <td><input type="date" id="finance${obsNum}VoucherDate${rowCount}"></td>
+                    <td><input type="number" id="finance${obsNum}VoucherAmount${rowCount}"></td>
+                    <td><input type="date" id="finance${obsNum}BillDate${rowCount}"></td>
+                    <td><input type="number" id="finance${obsNum}BillAmount${rowCount}"></td>
+                    <td><input type="text" id="finance${obsNum}Comment${rowCount}"></td>
+                `;
+            }
+        }
+        
+        function removeObservationRow(sectionId) {
+            const obsNum = sectionId.replace('observation', '');
+            const type = document.getElementById(`observation${obsNum}Type`).value;
+            
+            let tableId = (type === 'program') ? `observation${obsNum}Table` : `observation${obsNum}FinanceTable`;
+            const table = document.getElementById(tableId);
+            if (table) {
+                const tbody = table.getElementsByTagName('tbody')[0];
+                if (tbody.rows.length > 1) { // Ensure at least one row remains
+                    tbody.deleteRow(tbody.rows.length - 1);
+                } else {
+                    alert("অন্তত একটি সারি থাকতে হবে");
+                }
+            }
+        }
+        
+        function removeObservationSection(sectionId) {
+            const element = document.getElementById(sectionId);
+            if (!element) return; 
+
+            const parentId = element.parentElement.id;
+
+            if (parentId === 'observationSections') {
+                if (document.getElementById('observationSections').children.length > 1) {
+                    element.remove();
+                     // Re-index remaining observation sections' IDs and input IDs
+                    reindexSections('observationSections', 'observation');
+                } else {
+                    alert("অন্তত একটি পর্যবেক্ষণ সেকশন থাকতে হবে");
+                }
+            } else if (parentId === 'customTableSections') {
+                 if (document.getElementById('customTableSections').children.length > 1) {
+                    element.remove();
+                    // Re-index remaining custom observation sections' IDs and input IDs
+                    reindexSections('customTableSections', 'customObservation');
+                } else {
+                    alert("অন্তত একটি কাস্টম টেবিল পর্যবেক্ষণ সেকশন থাকতে হবে");
+                }
+            }
+        }
+
+        function reindexSections(parentId, prefix) {
+            const sections = document.getElementById(parentId).children;
+            let currentCount = 0;
+            for (let i = 0; i < sections.length; i++) {
+                currentCount++;
+                const oldId = sections[i].id;
+                const newId = `${prefix}${currentCount}`;
+                sections[i].id = newId;
+
+                // Update IDs of inputs and tables within the section
+                // This part requires careful handling based on your specific ID patterns
+                sections[i].querySelectorAll('[id]').forEach(el => {
+                    const elId = el.id;
+                    if (elId.startsWith(prefix)) { // Check if ID belongs to this section type
+                        const suffix = elId.substring(oldId.length);
+                        el.id = newId + suffix;
+                    } else if (elId.startsWith('finance')) { // Special case for finance fields
+                        const financeObsNumMatch = elId.match(/^finance(\d+)/);
+                        if (financeObsNumMatch && parseInt(financeObsNumMatch[1]) === parseInt(oldId.replace(prefix, ''))) {
+                             const financeSuffix = elId.substring(`finance${financeObsNumMatch[1]}`.length);
+                             el.id = `finance${currentCount}${financeSuffix}`;
+                        }
+                    } else if (elId.startsWith('obs') && !elId.startsWith('observation')) { // Special case for program table inputs
+                         const obsNumMatch = elId.match(/^obs(\d+)/);
+                        if (obsNumMatch && parseInt(obsNumMatch[1]) === parseInt(oldId.replace(prefix, ''))) {
+                             const obsSuffix = elId.substring(`obs${obsNumMatch[1]}`.length);
+                             el.id = `obs${currentCount}${obsSuffix}`;
+                        }
+                    } else if (elId.startsWith('customObs') && !elId.startsWith('customObservation')) { // Special case for custom table inputs
+                         const customObsNumMatch = elId.match(/^customObs(\d+)/);
+                        if (customObsNumMatch && parseInt(customObsNumMatch[1]) === parseInt(oldId.replace(prefix, ''))) {
+                             const customObsSuffix = elId.substring(`customObs${customObsNumMatch[1]}`.length);
+                             el.id = `customObs${currentCount}${customObsSuffix}`;
+                        }
+                    }
+                });
+
+                // Update onchange attributes
+                sections[i].querySelectorAll('[onchange]').forEach(el => {
+                    let onchangeAttr = el.getAttribute('onchange');
+                    if (onchangeAttr.includes(oldId)) {
+                        el.setAttribute('onchange', onchangeAttr.replace(new RegExp(oldId, 'g'), newId));
+                    }
+                    if (onchangeAttr.includes(`'observation${parseInt(oldId.replace(prefix, ''))}'`)) {
+                        el.setAttribute('onchange', onchangeAttr.replace(new RegExp(`'observation${parseInt(oldId.replace(prefix, ''))}'`, 'g'), `'observation${currentCount}'`));
+                    }
+                     if (onchangeAttr.includes(`'customObservation${parseInt(oldId.replace(prefix, ''))}'`)) {
+                        el.setAttribute('onchange', onchangeAttr.replace(new RegExp(`'customObservation${parseInt(oldId.replace(prefix, ''))}'`, 'g'), `'customObservation${currentCount}'`));
+                    }
+                });
+
+                // Update onclick attributes for add/remove buttons
+                sections[i].querySelectorAll('[onclick]').forEach(el => {
+                    let onclickAttr = el.getAttribute('onclick');
+                    if (onclickAttr.includes(`'${oldId}'`)) {
+                        el.setAttribute('onclick', onclickAttr.replace(new RegExp(`'${oldId}'`, 'g'), `'${newId}'`));
+                    }
+                });
+
+                // Update 'for' attributes of labels
+                sections[i].querySelectorAll('label[for]').forEach(label => {
+                    let htmlFor = label.getAttribute('for');
+                     if (htmlFor.startsWith(prefix)) {
+                        const suffix = htmlFor.substring(oldId.length);
+                        label.setAttribute('for', newId + suffix);
+                    } else if (htmlFor.startsWith('finance')) {
+                        const financeObsNumMatch = htmlFor.match(/^finance(\d+)/);
+                        if (financeObsNumMatch && parseInt(financeObsNumMatch[1]) === parseInt(oldId.replace(prefix, ''))) {
+                             const financeSuffix = htmlFor.substring(`finance${financeObsNumMatch[1]}`.length);
+                             label.setAttribute('for', `finance${currentCount}${financeSuffix}`);
+                        }
+                    } else if (htmlFor.startsWith('obs') && !htmlFor.startsWith('observation')) {
+                         const obsNumMatch = htmlFor.match(/^obs(\d+)/);
+                        if (obsNumMatch && parseInt(obsNumMatch[1]) === parseInt(oldId.replace(prefix, ''))) {
+                             const obsSuffix = htmlFor.substring(`obs${obsNumMatch[1]}`.length);
+                             label.setAttribute('for', `obs${currentCount}${obsSuffix}`);
+                        }
+                    } else if (htmlFor.startsWith('customObs') && !htmlFor.startsWith('customObservation')) {
+                         const customObsNumMatch = htmlFor.match(/^customObs(\d+)/);
+                        if (customObsNumMatch && parseInt(customObsNumMatch[1]) === parseInt(oldId.replace(prefix, ''))) {
+                             const customObsSuffix = htmlFor.substring(`customObs${customObsNumMatch[1]}`.length);
+                             label.setAttribute('for', `customObs${currentCount}${customObsSuffix}`);
+                        }
+                    }
+                });
+            }
+            if (prefix === 'observation') observationCount = currentCount;
+            if (prefix === 'customObservation') customObservationCount = currentCount;
+        }
+
+        function calculateDeficit(sectionId, rowNum, subType) {
+            const obsNum = sectionId.replace('observation', '');
+            const passBookEl = document.getElementById(`obs${obsNum}PassBook${rowNum}`);
+            const collectionSheetEl = document.getElementById(`obs${obsNum}CollectionSheet${rowNum}`);
+            const deficitEl = document.getElementById(`obs${obsNum}Deficit${rowNum}`);
+
+            if (!passBookEl || !collectionSheetEl || !deficitEl) {
+                console.warn(`Elements not found for deficit calculation in ${sectionId}, row ${rowNum}`);
+                return;
+            }
+
+            const passBook = parseFloat(passBookEl.value) || 0;
+            const collectionSheet = parseFloat(collectionSheetEl.value) || 0;
+            
+            let deficit = 0;
+            if (subType === 'loanDeficit') {
+                deficit = collectionSheet - passBook; 
+            } else { // savingsDeficit, dpsDeficit, otherDeficit
+                deficit = passBook - collectionSheet; 
+            }
+            
+            deficitEl.value = Math.round(deficit); // Round to whole number
+            // Ensure textarea automatically adjusts height
+            // No need for height adjustment for input type="number"
+            calculateRemaining(sectionId, rowNum, subType);
+        }
+        
+        function calculateRemaining(sectionId, rowNum, subType) {
+            const obsNum = sectionId.replace('observation', '');
+            const deficitEl = document.getElementById(`obs${obsNum}Deficit${rowNum}`);
+            const depositAmountEl = document.getElementById(`obs${obsNum}DepositAmount${rowNum}`);
+            const remainingEl = document.getElementById(`obs${obsNum}Remaining${rowNum}`);
+
+            if (!deficitEl || !depositAmountEl || !remainingEl) {
+                console.warn(`Elements not found for remaining calculation in ${sectionId}, row ${rowNum}`);
+                return;
+            }
+
+            const deficit = parseFloat(deficitEl.value) || 0;
+            const depositAmount = parseFloat(depositAmountEl.value) || 0;
+            
+            const remaining = deficit - depositAmount;
+            remainingEl.value = Math.round(remaining); // Round to whole number
+            // No need for height adjustment for input type="number"
+        }
+
+        function addCustomObservationSection() {
+            // Check current number of custom observation sections
+            const currentCustomObservations = document.querySelectorAll('#customTableSections .observation-section').length;
+            customObservationCount = currentCustomObservations + 1; // Ensure customObservationCount is always aligned with actual elements
+
+            const newSection = document.createElement('div');
+            newSection.className = 'observation-section';
+            newSection.id = `customObservation${customObservationCount}`;
+            newSection.innerHTML = `
+                <div class="input-section">
+                    <label for="customObs${customObservationCount}Title">শিরোনাম:</label>
+                    <input type="text" id="customObs${customObservationCount}Title" placeholder="কাস্টম টেবিলের শিরোনাম">
+                </div>
+                <div class="input-section">
+                    <label for="customObs${customObservationCount}Headers">কলাম হেডার (কমা দ্বারা বিভক্ত করুন, যেমন: কলাম ১, কলাম ২, কলাম ৩):</label>
+                    <input type="text" id="customObs${customObservationCount}Headers" placeholder="হেডার দিন" oninput="updateCustomTableHeaders('customObservation${customObservationCount}')">
+                </div>
+                <div class="table-responsive-wrapper">
+                    <table id="customObs${customObservationCount}Table" style="display:none;">
+                        <thead>
+                            <tr id="customObs${customObservationCount}TableHeader"></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="button-group">
+                    <button onclick="addCustomRow('customObservation${customObservationCount}')" class="add-btn add-custom-row-btn" style="display:none;">সারি যোগ করুন</button>
+                    <button onclick="removeCustomRow('customObservation${customObservationCount}')" class="remove-btn remove-custom-row-btn" style="display:none;">সর্বশেষ সারি মুছুন</button>
+                    <button onclick="removeObservationSection('customObservation${customObservationCount}')" class="remove-btn remove-this-observation-btn">এই পর্যবেক্ষণ মুছুন</button>
+                </div>
+            `;
+            document.getElementById('customTableSections').appendChild(newSection);
+            // No initial row or header generation here. It will be done when user types headers.
+        }
+
+        function updateCustomTableHeaders(sectionId) {
+            const obsNum = sectionId.replace('customObservation', '');
+            const headersInputEl = document.getElementById(`customObs${obsNum}Headers`);
+            if (!headersInputEl) return; 
+            const headersInput = headersInputEl.value;
+
+            const tableHeaderRow = document.getElementById(`customObs${obsNum}TableHeader`);
+            const tableBody = document.getElementById(`customObs${obsNum}Table`).getElementsByTagName('tbody')[0];
+            const tableElement = document.getElementById(`customObs${obsNum}Table`);
+            
+            const addRowBtn = document.querySelector(`#${sectionId} .add-custom-row-btn`);
+            const removeRowBtn = document.querySelector(`#${sectionId} .remove-custom-row-btn`);
+
+            if (!tableHeaderRow || !tableBody || !tableElement || !addRowBtn || !removeRowBtn) return;
+
+            // Store existing data before clearing headers
+            const existingData = [];
+            for (let r = 0; r < tableBody.rows.length; r++) {
+                const rowData = [];
+                for (let c = 0; c < tableBody.rows[r].cells.length; c++) {
+                    const inputEl = tableBody.rows[r].cells[c].querySelector('input');
+                    if (inputEl) {
+                        rowData.push(inputEl.value);
+                    }
+                }
+                existingData.push(rowData);
+            }
+
+            tableHeaderRow.innerHTML = ''; 
+            tableBody.innerHTML = ''; 
+
+            if (headersInput.trim() === '') {
+                tableElement.style.display = 'none';
+                tableElement.style.minWidth = 'auto';
+                addRowBtn.style.display = 'none';
+                removeRowBtn.style.display = 'none';
+                return;
+            }
+
+            const newHeaders = headersInput.split(',').map(h => h.trim()).filter(h => h !== ''); 
+            if (newHeaders.length === 0) { 
+                tableElement.style.display = 'none';
+                tableElement.style.minWidth = 'auto';
+                addRowBtn.style.display = 'none';
+                removeRowBtn.style.display = 'none';
+                return;
+            }
+
+            newHeaders.forEach(header => {
+                const th = document.createElement('th');
+                th.textContent = header;
+                tableHeaderRow.appendChild(th);
+            });
+
+            tableElement.style.display = 'table'; 
+            tableElement.style.minWidth = `${Math.max(300, newHeaders.length * 100)}px`;
+            addRowBtn.style.display = 'inline-block';
+            removeRowBtn.style.display = 'inline-block';
+
+            // Re-populate data based on new headers or add a new row
+            if (existingData.length > 0) {
+                existingData.forEach((rowData, rIndex) => {
+                    const newRow = tableBody.insertRow();
+                    newHeaders.forEach((header, colIndex) => {
+                        const td = document.createElement('td');
+                        const input = document.createElement('input');
+                        input.type = 'text'; 
+                        input.id = `customObs${obsNum}Row${rIndex + 1}Col${colIndex + 1}`;
+                        input.className = 'wide-input';
+                        input.value = rowData[colIndex] !== undefined ? rowData[colIndex] : ''; // Populate existing data
+                        td.appendChild(input);
+                        newRow.appendChild(td);
+                    });
+                });
+            } else {
+                 addCustomRow(sectionId); // Add initial row if no existing data
+            }
+        }
+
+        function addCustomRow(sectionId) {
+            const obsNum = sectionId.replace('customObservation', '');
+            const headersInputEl = document.getElementById(`customObs${obsNum}Headers`);
+             if (!headersInputEl) return;
+            const headersInput = headersInputEl.value;
+
+            if (headersInput.trim() === '') {
+                alert("আগে কলাম হেডার দিন!");
+                return;
+            }
+            const headers = headersInput.split(',').map(h => h.trim()).filter(h => h !== '');
+            if (headers.length === 0) {
+                alert("বৈধ কলাম হেডার দিন!");
+                return;
+            }
+            
+            const tableBodyEl = document.getElementById(`customObs${obsNum}Table`);
+            if(!tableBodyEl) return;
+            const tableBody = tableBodyEl.getElementsByTagName('tbody')[0];
+            const rowCount = tableBody.rows.length + 1;
+
+            const newRow = tableBody.insertRow();
+            headers.forEach((header, colIndex) => {
+                const td = document.createElement('td');
+                const input = document.createElement('input');
+                input.type = 'text'; 
+                input.id = `customObs${obsNum}Row${rowCount}Col${colIndex + 1}`;
+                input.className = 'wide-input';
+                td.appendChild(input);
+                newRow.appendChild(td);
+            });
+        }
+
+        function removeCustomRow(sectionId) {
+            const obsNum = sectionId.replace('customObservation', '');
+            const tableBodyEl = document.getElementById(`customObs${obsNum}Table`);
+             if(!tableBodyEl) return;
+            const tableBody = tableBodyEl.getElementsByTagName('tbody')[0];
+            if (tableBody.rows.length > 1) { // Ensure at least one row remains
+                tableBody.deleteRow(tableBody.rows.length - 1);
+            } else {
+                alert("অন্তত একটি সারি থাকতে হবে");
+            }
+        }
+        
+        function generateReport() {
+            const branchName = document.getElementById('branchName').value;
+            const areaName = document.getElementById('areaName').value;
+            const zoneName = document.getElementById('zoneName').value;
+            const projectName = document.getElementById('projectName').value;
+            
+            const projectStartDate = document.getElementById('projectStartDate').value;
+            const projectEndDate = document.getElementById('projectEndDate').value;
+            const projectPeriod = (projectStartDate && projectEndDate) ? 
+                `${formatDate(projectStartDate)} থেকে ${formatDate(projectEndDate)}` : 'উল্লেখ নেই';
+            
+            const auditStartDate = document.getElementById('auditStartDate').value;
+            const auditEndDate = document.getElementById('auditEndDate').value;
+            const auditDate = (auditStartDate && auditEndDate) ?
+                `${formatDate(auditStartDate)} থেকে ${formatDate(auditEndDate)}` : 'উল্লেখ নেই';
+            
+            const reportSubmissionDateInput = document.getElementById('reportSubmissionDate').value;
+            const reportSubmissionDate = reportSubmissionDateInput ? formatDate(reportSubmissionDateInput) : 'উল্লেখ নেই';
+            
+            let auditorsHTML = '';
+            // Get current number of auditor input groups from DOM
+            const currentAuditorElements = document.querySelectorAll('#auditorInputs .auditor-input');
+            for (let i = 0; i < currentAuditorElements.length; i++) {
+                const auditorIndex = i + 1; // 1-based index
+                const nameEl = document.getElementById(`auditor${auditorIndex}Name`);
+                const designationEl = document.getElementById(`auditor${auditorIndex}Designation`);
+                if (!nameEl || !designationEl) continue;
+
+                const name = nameEl.value;
+                const designation = designationEl.value;
+                
+                if (name || designation) { // Only add if there's some content
+                    auditorsHTML += `<p><strong>অডিটর ${auditorIndex}:</strong> ${name || 'নাম উল্লেখ নেই'} (${designation || 'পদবী উল্লেখ নেই'})</p>`;
+                }
+            }
+            if (auditorsHTML === '') { // If no auditors were added or all were empty
+                auditorsHTML = '<p>কোনো অডিটর তথ্য দেওয়া হয়নি।</p>';
+            }
+            
+            let programObservationsHTML = '';
+            let financeObservationsHTML = '';
+            
+            const observationSections = document.getElementById('observationSections').children;
+            for (let i = 0; i < observationSections.length; i++) {
+                const section = observationSections[i];
+                const sectionId = section.id;
+                // Get the actual number from the current section's ID
+                const obsNum = parseInt(sectionId.replace('observation', '')); 
+
+                const typeEl = document.getElementById(`observation${obsNum}Type`);
+                if (!typeEl) continue;
+                const type = typeEl.value;
+                
+                if (type === 'program') {
+                    const titleEl = document.getElementById(`observation${obsNum}Title`);
+                    const subTypeEl = document.getElementById(`observation${obsNum}ProgramSubtype`);
+                    if (!titleEl || !subTypeEl) continue;
+
+                    const title = titleEl.value;
+                    const subType = subTypeEl.value;
+                    
+                    let tableHeaders = [];
+                     if (subType === 'loanDeficit' || subType === 'savingsDeficit' || subType === 'dpsDeficit' || subType === 'otherDeficit') {
+                        tableHeaders = ["কর্মীর নাম", "সমিতি", "কোড", "সদস্য", "পাশ বই", "কালেকশন সীট", "ঘাটতি", "জমার তারিখ", "জমার পরিমান", "অবশিষ্ট", "মন্তব্য"];
+                    } else if (subType === 'generalObservation') {
+                        tableHeaders = ["সমিতি", "কোড", "সদস্য", "বিতরণ তারিখ", "বিতরণ পরিমান", "ঋণ স্থিতি", "সঞ্চয় স্থিতি", "পূর্বের ঋণ পরিমান", "পূর্বের ঋণ স্থিতি", "মন্তব্য"];
+                    }
+
+                    // Only create table HTML if there are headers OR if data exists
+                    let tableHTML = '';
+                    const table = document.getElementById(`observation${obsNum}Table`);
+                    let hasProgramData = false;
+
+                    if (table) {
+                        const rows = table.getElementsByTagName('tbody')[0].rows;
+                        for (let r = 0; r < rows.length; r++) {
+                            let rowData = [];
+                            let isRowEmpty = true;
+                            // Ensure to use the current obsNum for IDs when retrieving data
+                            if (subType === 'loanDeficit' || subType === 'savingsDeficit' || subType === 'dpsDeficit' || subType === 'otherDeficit') {
+                                const workerName = document.getElementById(`obs${obsNum}WorkerName${r+1}`)?.value || '';
+                                const society = document.getElementById(`obs${obsNum}Society${r+1}`)?.value || '';
+                                const code = document.getElementById(`obs${obsNum}Code${r+1}`)?.value || '';
+                                const member = document.getElementById(`obs${obsNum}Member${r+1}`)?.value || '';
+                                const passBook = document.getElementById(`obs${obsNum}PassBook${r+1}`)?.value || '';
+                                const collectionSheet = document.getElementById(`obs${obsNum}CollectionSheet${r+1}`)?.value || '';
+                                const deficit = document.getElementById(`obs${obsNum}Deficit${r+1}`)?.value || '';
+                                const depositDateVal = document.getElementById(`obs${obsNum}DepositDate${r+1}`)?.value;
+                                const depositDate = depositDateVal ? formatDate(depositDateVal) : '';
+                                const depositAmount = document.getElementById(`obs${obsNum}DepositAmount${r+1}`)?.value || '';
+                                const remaining = document.getElementById(`obs${obsNum}Remaining${r+1}`)?.value || '';
+                                const comment = document.getElementById(`obs${obsNum}Comment${r+1}`)?.value || '';
+                                
+                                rowData = [workerName, society, code, member, passBook, collectionSheet, deficit, depositDate, depositAmount, remaining, comment];
+                            } else if (subType === 'generalObservation') {
+                                const society = document.getElementById(`obs${obsNum}Society${r+1}`)?.value || '';
+                                const code = document.getElementById(`obs${obsNum}Code${r+1}`)?.value || '';
+                                const member = document.getElementById(`obs${obsNum}Member${r+1}`)?.value || '';
+                                const distDateVal = document.getElementById(`obs${obsNum}DistDate${r+1}`)?.value;
+                                const distDate = distDateVal ? formatDate(distDateVal) : '';
+                                const distAmount = document.getElementById(`obs${obsNum}DistAmount${r+1}`)?.value || '';
+                                const loanBalance = document.getElementById(`obs${obsNum}LoanBalance${r+1}`)?.value || '';
+                                const savingsBalance = document.getElementById(`obs${obsNum}SavingsBalance${r+1}`)?.value || '';
+                                const prevLoanAmount = document.getElementById(`obs${obsNum}PrevLoanAmount${r+1}`)?.value || '';
+                                const prevLoanBalance = document.getElementById(`obs${obsNum}PrevLoanBalance${r+1}`)?.value || '';
+                                const comment = document.getElementById(`obs${obsNum}Comment${r+1}`)?.value || '';
+                                
+                                rowData = [society, code, member, distDate, distAmount, loanBalance, savingsBalance, prevLoanAmount, prevLoanBalance, comment];
+                            }
+
+                            // Check if all cells in the row are empty
+                            isRowEmpty = rowData.every(data => data === '');
+                            
+                            if (!isRowEmpty) {
+                                hasProgramData = true;
+                                tableHTML += `<tr>${rowData.map(data => `<td>${data}</td>`).join('')}</tr>`;
+                            }
+                        }
+                    }
+
+                    if (hasProgramData || title) { // Only add section if there's data or a title
+                        let currentTable = `<table border="1" style="width:100%; border-collapse:collapse; margin-top:10px; min-width: ${subType === 'loanDeficit' || subType === 'savingsDeficit' || subType === 'dpsDeficit' || subType === 'otherDeficit' ? '1000px' : '800px'};">`;
+                        if (tableHeaders.length > 0) {
+                            currentTable += `<thead><tr>${tableHeaders.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
+                        } else {
+                            currentTable += `<tbody>`; 
+                        }
+                        currentTable += tableHTML; // Add the generated rows
+                        currentTable += `</tbody></table>`;
+
+                        programObservationsHTML += `
+                            <div style="margin-bottom:25px;">
+                                <h3>${title || getSubtypeTitle(subType)}</h3>
+                                <div style="overflow-x:auto;">${currentTable}</div>
+                            </div>
+                        `;
+                    }
+                    
+                } else { // Finance Observation
+                    const financeTitleEl = document.getElementById(`observation${obsNum}FinanceTitle`);
+                     if (!financeTitleEl) continue;
+                    const financeTitle = financeTitleEl.value;
+                    
+                    let financeTableBodyHTML = ''; // To store finance table rows
+                    const financeTable = document.getElementById(`observation${obsNum}FinanceTable`);
+                    let hasFinanceData = false;
+
+                    if (financeTable) {
+                        const rows = financeTable.getElementsByTagName('tbody')[0].rows;
+                        for (let r = 0; r < rows.length; r++) {
+                            // Ensure to use the current obsNum for IDs when retrieving data
+                            const voucherNo = document.getElementById(`finance${obsNum}VoucherNo${r+1}`)?.value || '';
+                            const voucherDateVal = document.getElementById(`finance${obsNum}VoucherDate${r+1}`)?.value;
+                            const voucherDate = voucherDateVal ? formatDate(voucherDateVal) : '';
+                            const voucherAmount = document.getElementById(`finance${obsNum}VoucherAmount${r+1}`)?.value || '';
+                            const billDateVal = document.getElementById(`finance${obsNum}BillDate${r+1}`)?.value;
+                            const billDate = billDateVal ? formatDate(billDateVal) : '';
+                            const billAmount = document.getElementById(`finance${obsNum}BillAmount${r+1}`)?.value || '';
+                            const comment = document.getElementById(`finance${obsNum}Comment${r+1}`)?.value || '';
+                            
+                            const rowData = [voucherNo, voucherDate, voucherAmount, billDate, billAmount, comment];
+                            const isRowEmpty = rowData.every(data => data === '');
+
+                            if (!isRowEmpty) {
+                                hasFinanceData = true;
+                                financeTableBodyHTML += `<tr>${rowData.map(data => `<td>${data}</td>`).join('')}</tr>`;
+                            }
+                        }
+                    }
+
+                    if (hasFinanceData || financeTitle) { // Only add section if there's data or a title
+                         let currentFinanceTable = `<table border="1" style="width:100%; border-collapse:collapse; margin-top:10px; min-width: 600px;">
+                            <thead>
+                                <tr>
+                                    <th>ভাউচার নং</th>
+                                    <th>ভাউচার তারিখ</th>
+                                    <th>ভাউচারের পরিমান</th>
+                                    <th>বিলের তারিখ</th>
+                                    <th>বিলের পরিমান</th>
+                                    <th>মন্তব্য</th>
+                                </tr>
+                            </thead>
+                            <tbody>${financeTableBodyHTML}</tbody></table>`;
+
+                        financeObservationsHTML += `
+                            <div style="margin-bottom:25px;">
+                                <h3>${financeTitle || 'ফাইন্যান্স পর্যবেক্ষণ'}</h3>
+                                <div style="overflow-x:auto;">${currentFinanceTable}</div>
+                            </div>
+                        `;
+                    }
+                }
+            }
+
+            let customObservationsHTML = '';
+            const customTableSections = document.getElementById('customTableSections').children;
+            for (let i = 0; i < customTableSections.length; i++) {
+                const section = customTableSections[i];
+                const sectionId = section.id;
+                // Get the actual number from the current section's ID
+                const customObsNum = parseInt(sectionId.replace('customObservation', ''));
+
+                const titleEl = document.getElementById(`customObs${customObsNum}Title`);
+                const headersInputEl = document.getElementById(`customObs${customObsNum}Headers`);
+                if(!titleEl || !headersInputEl) continue;
+
+                const title = titleEl.value;
+                const headersInput = headersInputEl.value;
+                const headers = headersInput.split(',').map(h => h.trim()).filter(h => h !== '');
+                
+                // If no headers and no title, skip this section
+                if (headers.length === 0 && !title) continue;
+
+                let customTableBodyHTML = ''; // To store custom table rows
+                const customTable = document.getElementById(`customObs${customObsNum}Table`);
+                let hasCustomData = false;
+
+                if (customTable && headers.length > 0) { // Only try to read table if headers exist
+                    const rows = customTable.getElementsByTagName('tbody')[0].rows;
+                    for (let r = 0; r < rows.length; r++) {
+                        let rowData = [];
+                        let isRowEmpty = true;
+                        for (let j = 0; j < headers.length; j++) {
+                            // Ensure to use the current customObsNum for IDs when retrieving data
+                            const inputField = document.getElementById(`customObs${customObsNum}Row${r+1}Col${j+1}`);
+                            const value = inputField ? inputField.value : '';
+                            rowData.push(value);
+                            if (value !== '') {
+                                isRowEmpty = false;
+                            }
+                        }
+                        if (!isRowEmpty) {
+                            hasCustomData = true;
+                            customTableBodyHTML += `<tr>${rowData.map(data => `<td>${data}</td>`).join('')}</tr>`;
+                        }
+                    }
+                }
+                
+                if (hasCustomData || title) { // Only add section if there's data or a title
+                    let currentCustomTable = '';
+                    if (headers.length > 0) { // Only create table structure if headers were provided
+                        currentCustomTable = `<table border="1" style="width:100%; border-collapse:collapse; margin-top:10px; min-width:${Math.max(300, headers.length * 100)}px;">
+                            <thead>
+                                <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+                            </thead>
+                            <tbody>${customTableBodyHTML}</tbody></table>`;
+                    } else if (title && !hasCustomData) {
+                        currentCustomTable = '<p>কোনো ডেটা নেই।</p>'; // If title but no headers/data
+                    }
+                    
+                    customObservationsHTML += `
+                        <div style="margin-bottom:25px;">
+                            <h3>${title || 'কাস্টম টেবিল'}</h3>
+                            ${currentCustomTable ? `<div style="overflow-x:auto;">${currentCustomTable}</div>` : ''}
+                        </div>
+                    `;
+                }
+            }
+
+            let reportHTML = `
+                <div style="font-family:'SolaimanLipi', Arial, sans-serif; line-height:1.6;">
+                    <h2 style="text-align:center; font-size: 1.6em;">অডিট রিপোর্ট (খসড়া)</h2>
+                    
+                    <div style="margin-bottom:20px;">
+                        <h3 style="font-size: 1.3em;">প্রকল্প তথ্য</h3>
+                        <p><strong>শাখার নাম:</strong> ${branchName || 'উল্লেখ নেই'}</p>
+                        <p><strong>এরিয়ার নাম:</strong> ${areaName || 'উল্লেখ নেই'}</p>
+                        <p><strong>জোন নাম:</strong> ${zoneName || 'উল্লেখ নেই'}</p>
+                        <p><strong>প্রকল্পের নাম:</strong> ${projectName || 'উল্লেখ নেই'}</p>
+                        <p><strong>প্রকল্পের সময়:</strong> ${projectPeriod || 'উল্লেখ নেই'}</p>
+                        <p><strong>নিরীক্ষার তারিখ:</strong> ${auditDate || 'উল্লেখ নেই'}</p>
+                        <p><strong>নিরীক্ষা প্রতিবেদনের দাখিলের তারিখ:</strong> ${reportSubmissionDate || 'উল্লেখ নেই'}</p>
+                    </div>
+                    
+                    <div style="margin-bottom:20px;">
+                        <h3 style="font-size: 1.3em;">অডিটরদের তথ্য</h3>
+                        ${auditorsHTML}
+                    </div>
+                    
+                    ${(programObservationsHTML || financeObservationsHTML) ? 
+                        `<div style="margin-bottom:20px;">
+                            <h3 style="font-size: 1.3em;">পর্যবেক্ষণ ও সুপারিশ</h3>
+                            ${programObservationsHTML}
+                            ${financeObservationsHTML}
+                        </div>` : ''
+                    }
+
+                    ${customObservationsHTML ? `<div style="margin-bottom:20px;"><h3 style="font-size: 1.3em;">কাস্টম টেবিল পর্যবেক্ষণ</h3>${customObservationsHTML}</div>` : ''}
+
+                    <div style="margin-top:30px;">
+                        <p>প্রতিবেদন প্রস্তুতকারী,</p>
+                        <p style="margin-top: 40px;">___________</p>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('reportOutput').innerHTML = reportHTML;
+            document.getElementById('reportOutput').style.display = 'block';
+            document.getElementById('downloadBtns').style.display = 'flex';
+        }
+        
+        function formatDate(dateString) {
+            if (!dateString) return '';
+            const options = { year: 'numeric', month: 'long', day: 'numeric' };
+            try {
+                const date = new Date(dateString);
+                 // Check if date is valid after parsing
+                if (isNaN(date.getTime())) {
+                    return ''; 
+                }
+                return date.toLocaleDateString('bn-BD', options);
+            } catch (e) {
+                console.error("Date formatting error:", e);
+                return ''; 
+            }
+        }
+
+        function getSubtypeTitle(subType) {
+            switch (subType) {
+                case 'loanDeficit': return 'ঋন ঘাটতি';
+                case 'savingsDeficit': return 'সঞ্চয় ঘাটতি';
+                case 'dpsDeficit': return 'ডিপিএস ঘাটতি';
+                case 'otherDeficit': return 'অন্যন্য ঘাটতি';
+                case 'generalObservation': return 'জেনারেল অবজারভেশন';
+                default: return 'পর্যবেক্ষণ';
+            }
+        }
+
+        async function downloadPDF() {
+            if (typeof window.jspdf === 'undefined' || typeof window.html2canvas === 'undefined') {
+                alert("PDF তৈরির জন্য প্রয়োজনীয় লাইব্রেরি লোড হয়নি।");
+                console.error("jsPDF or html2canvas not available for PDF generation.");
+                return;
+            }
+
+            const { jsPDF } = window.jspdf;
+            const reportContent = document.getElementById('reportOutput');
+            
+            reportContent.style.height = 'auto';
+            reportContent.style.maxHeight = 'none';
+            reportContent.style.overflow = 'visible';
+
+            try {
+                const canvas = await html2canvas(reportContent, {
+                    scale: 2, 
+                    useCORS: true, 
+                    logging: true,
+                    // Attempt to set font for rendering on canvas
+                    onclone: (document) => {
+                        // This might help for rendering Bengali fonts if they are embedded or available system-wide
+                        document.body.style.fontFamily = "'SolaimanLipi', Arial, sans-serif";
+                    }
+                });
+
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF('p', 'mm', 'a4');
+                const imgWidth = 210; 
+                const pageHeight = 297; 
+                const imgHeight = canvas.height * imgWidth / canvas.width;
+                let heightLeft = imgHeight;
+                let position = 0;
+
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+
+                while (heightLeft > 0) {
+                    position = heightLeft - imgHeight;
+                    pdf.addPage();
+                    pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                    heightLeft -= pageHeight;
+                }
+                pdf.save('audit_report.pdf');
+            } catch (err) {
+                console.error("PDF generation failed:", err);
+                alert("PDF তৈরি করতে সমস্যা হয়েছে। কনসোল চেক করুন।");
+            } finally {
+                // Reset styles after generating PDF
+                reportContent.style.height = ''; 
+                reportContent.style.maxHeight = '';
+                reportContent.style.overflow = '';
+            }
+        }
+        
+        function downloadWord() {
+            if (typeof window.htmlDocx === 'undefined' || typeof window.htmlDocx.asBlob !== 'function' || typeof window.saveAs === 'undefined') {
+                alert("Word ফাইল তৈরি করতে সমস্যা হয়েছে: প্রয়োজনীয় লাইব্রেরি লোড হয়নি।");
+                console.error("html-docx.js or FileSaver.js library not loaded or not exposed globally correctly.");
+                return;
+            }
+            try {
+                const content = document.getElementById('reportOutput').innerHTML;
+                // Add explicit font styling to the HTML for DOCX conversion
+                const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:'SolaimanLipi', Arial, sans-serif;} table{border-collapse:collapse; width:100%;} th,td{border:1px solid #ddd; padding:8px; text-align: left; word-wrap: break-word;}</style></head><body>${content}</body></html>`;
+                
+                const converted = window.htmlDocx.asBlob(fullHtml, {orientation: 'portrait', margins: {top: 720, right: 720, bottom: 720, left: 720}}); // Standard margins: 0.5 inch (720 TWIPs)
+                saveAs(converted, 'audit_report.docx');
+            } catch (e) {
+                 console.error("Word generation failed:", e);
+                 alert("Word ফাইল তৈরি করতে সমস্যা হয়েছে।");
+            }
+        }
+        
+        function downloadExcel() {
+            if (typeof window.XLSX === 'undefined') {
+                alert("Excel ফাইল তৈরি করতে সমস্যা হয়েছে: প্রয়োজনীয় লাইব্রেরি লোড হয়নি।");
+                console.error("XLSX library not available for Excel generation.");
+                return;
+            }
+            try {
+                const workbook = XLSX.utils.book_new();
+                const output = document.getElementById('reportOutput');
+                
+                const tables = output.getElementsByTagName('table');
+                if (tables.length === 0) {
+                    alert("রিপোর্টে কোনো টেবিল পাওয়া যায়নি।");
+                    return;
+                }
+                
+                for (let i = 0; i < tables.length; i++) {
+                    let sheetTitle = `Sheet${i+1}`;
+                    const tableParent = tables[i].closest('div[style*="margin-bottom:25px"]');
+                    if (tableParent) {
+                        const heading = tableParent.querySelector('h3');
+                        if (heading && heading.textContent.trim()) {
+                             // Sanitize sheet title: max 31 chars, no invalid characters
+                             sheetTitle = heading.textContent.trim().replace(/[\[\]\*\/\\?\:]/g, "").substring(0, 30);
+                        }
+                    }
+                    if (sheetTitle === "") { // Fallback if title becomes empty after sanitization
+                        sheetTitle = `Table${i+1}`;
+                    }
+
+                    const worksheet = XLSX.utils.table_to_sheet(tables[i]);
+                    XLSX.utils.book_append_sheet(workbook, worksheet, sheetTitle);
+                }
+                
+                XLSX.writeFile(workbook, 'audit_report.xlsx');
+            } catch (e) {
+                 console.error("Excel generation failed:", e);
+                 alert("Excel ফাইল তৈরি করতে সমস্যা হয়েছে।");
+            }
+        }
+
+        // --- Export/Import Functionality ---
+
+        function collectFormData() {
+            const data = {};
+
+            // Project Info
+            data.branchName = document.getElementById('branchName').value;
+            data.areaName = document.getElementById('areaName').value;
+            data.zoneName = document.getElementById('zoneName').value;
+            data.projectName = document.getElementById('projectName').value;
+            data.projectStartDate = document.getElementById('projectStartDate').value;
+            data.projectEndDate = document.getElementById('projectEndDate').value;
+            data.auditStartDate = document.getElementById('auditStartDate').value;
+            data.auditEndDate = document.getElementById('auditEndDate').value;
+            data.reportSubmissionDate = document.getElementById('reportSubmissionDate').value;
+
+            // Auditors
+            data.auditors = [];
+            const currentAuditorElements = document.querySelectorAll('#auditorInputs .auditor-input');
+            currentAuditorElements.forEach((auditorDiv, index) => {
+                const auditorIndex = index + 1; // Use 1-based index based on position in DOM
+                const nameEl = auditorDiv.querySelector(`#auditor${auditorIndex}Name`);
+                const designationEl = auditorDiv.querySelector(`#auditor${auditorIndex}Designation`);
+                if (nameEl && designationEl) {
+                    data.auditors.push({
+                        name: nameEl.value,
+                        designation: designationEl.value
+                    });
+                }
+            });
+
+            // Observations (Program & Finance)
+            data.observations = [];
+            const observationSections = document.getElementById('observationSections').children;
+            for (let i = 0; i < observationSections.length; i++) {
+                const section = observationSections[i];
+                const sectionId = section.id;
+                const obsNum = parseInt(sectionId.replace('observation', '')); // Get the current actual number
+
+                const type = document.getElementById(`observation${obsNum}Type`).value;
+                const observationData = {
+                    // id: obsNum, // No need to save original ID, we re-index on import
+                    type: type
+                };
+
+                if (type === 'program') {
+                    observationData.title = document.getElementById(`observation${obsNum}Title`).value;
+                    observationData.subType = document.getElementById(`observation${obsNum}ProgramSubtype`).value;
+                    
+                    const table = document.getElementById(`observation${obsNum}Table`);
+                    const rows = table ? table.getElementsByTagName('tbody')[0].rows : [];
+                    observationData.rows = [];
+
+                    for (let r = 0; r < rows.length; r++) {
+                        let rowData = {};
+                        if (observationData.subType === 'loanDeficit' || observationData.subType === 'savingsDeficit' || observationData.subType === 'dpsDeficit' || observationData.subType === 'otherDeficit') {
+                            rowData.workerName = document.getElementById(`obs${obsNum}WorkerName${r+1}`)?.value || '';
+                            rowData.society = document.getElementById(`obs${obsNum}Society${r+1}`)?.value || '';
+                            rowData.code = document.getElementById(`obs${obsNum}Code${r+1}`)?.value || '';
+                            rowData.member = document.getElementById(`obs${obsNum}Member${r+1}`)?.value || '';
+                            rowData.passBook = document.getElementById(`obs${obsNum}PassBook${r+1}`)?.value || '';
+                            rowData.collectionSheet = document.getElementById(`obs${obsNum}CollectionSheet${r+1}`)?.value || '';
+                            rowData.deficit = document.getElementById(`obs${obsNum}Deficit${r+1}`)?.value || '';
+                            rowData.depositDate = document.getElementById(`obs${obsNum}DepositDate${r+1}`)?.value || '';
+                            rowData.depositAmount = document.getElementById(`obs${obsNum}DepositAmount${r+1}`)?.value || '';
+                            rowData.remaining = document.getElementById(`obs${obsNum}Remaining${r+1}`)?.value || '';
+                            rowData.comment = document.getElementById(`obs${obsNum}Comment${r+1}`)?.value || '';
+                        } else if (observationData.subType === 'generalObservation') {
+                            rowData.society = document.getElementById(`obs${obsNum}Society${r+1}`)?.value || '';
+                            rowData.code = document.getElementById(`obs${obsNum}Code${r+1}`)?.value || '';
+                            rowData.member = document.getElementById(`obs${obsNum}Member${r+1}`)?.value || '';
+                            rowData.distDate = document.getElementById(`obs${obsNum}DistDate${r+1}`)?.value || '';
+                            rowData.distAmount = document.getElementById(`obs${obsNum}DistAmount${r+1}`)?.value || '';
+                            rowData.loanBalance = document.getElementById(`obs${obsNum}LoanBalance${r+1}`)?.value || '';
+                            rowData.savingsBalance = document.getElementById(`obs${obsNum}SavingsBalance${r+1}`)?.value || '';
+                            rowData.prevLoanAmount = document.getElementById(`obs${obsNum}PrevLoanAmount${r+1}`)?.value || '';
+                            rowData.prevLoanBalance = document.getElementById(`obs${obsNum}PrevLoanBalance${r+1}`)?.value || '';
+                            rowData.comment = document.getElementById(`obs${obsNum}Comment${r+1}`)?.value || '';
+                        }
+                        observationData.rows.push(rowData);
+                    }
+
+                } else { // Finance
+                    observationData.financeTitle = document.getElementById(`observation${obsNum}FinanceTitle`).value;
+                    
+                    const table = document.getElementById(`observation${obsNum}FinanceTable`);
+                    const rows = table ? table.getElementsByTagName('tbody')[0].rows : [];
+                    observationData.rows = [];
+
+                    for (let r = 0; r < rows.length; r++) {
+                        let rowData = {};
+                        rowData.voucherNo = document.getElementById(`finance${obsNum}VoucherNo${r+1}`)?.value || '';
+                        rowData.voucherDate = document.getElementById(`finance${obsNum}VoucherDate${r+1}`)?.value || '';
+                        rowData.voucherAmount = document.getElementById(`finance${obsNum}VoucherAmount${r+1}`)?.value || '';
+                        rowData.billDate = document.getElementById(`finance${obsNum}BillDate${r+1}`)?.value || '';
+                        rowData.billAmount = document.getElementById(`finance${obsNum}BillAmount${r+1}`)?.value || '';
+                        rowData.comment = document.getElementById(`finance${obsNum}Comment${r+1}`)?.value || '';
+                        observationData.rows.push(rowData);
+                    }
+                }
+                data.observations.push(observationData);
+            }
+
+            // Custom Tables
+            data.customObservations = [];
+            const customTableSections = document.getElementById('customTableSections').children;
+            for (let i = 0; i < customTableSections.length; i++) {
+                const section = customTableSections[i];
+                const sectionId = section.id;
+                const customObsNum = parseInt(sectionId.replace('customObservation', '')); // Get the current actual number
+
+                const customObservationData = {
+                    // id: customObsNum, // No need to save original ID
+                    title: document.getElementById(`customObs${customObsNum}Title`)?.value || '',
+                    headers: document.getElementById(`customObs${customObsNum}Headers`)?.value || ''
+                };
+                
+                const table = document.getElementById(`customObs${customObsNum}Table`);
+                const rows = table ? table.getElementsByTagName('tbody')[0].rows : [];
+                customObservationData.rows = [];
+
+                const headersArray = customObservationData.headers.split(',').map(h => h.trim()).filter(h => h !== '');
+
+                for (let r = 0; r < rows.length; r++) {
+                    let rowData = [];
+                    for (let c = 0; c < headersArray.length; c++) {
+                        const inputField = document.getElementById(`customObs${customObsNum}Row${r+1}Col${c+1}`);
+                        rowData.push(inputField ? inputField.value : '');
+                    }
+                    customObservationData.rows.push(rowData);
+                }
+                data.customObservations.push(customObservationData);
+            }
+
+            return data;
+        }
+
+        function populateForm(data) {
+            // Project Info
+            document.getElementById('branchName').value = data.branchName || '';
+            document.getElementById('areaName').value = data.areaName || '';
+            document.getElementById('zoneName').value = data.zoneName || '';
+            document.getElementById('projectName').value = data.projectName || '';
+            document.getElementById('projectStartDate').value = data.projectStartDate || '';
+            document.getElementById('projectEndDate').value = data.projectEndDate || '';
+            document.getElementById('auditStartDate').value = data.auditStartDate || '';
+            document.getElementById('auditEndDate').value = data.auditEndDate || '';
+            document.getElementById('reportSubmissionDate').value = data.reportSubmissionDate || '';
+
+            // Auditors
+            document.getElementById('auditorInputs').innerHTML = ''; // Clear existing auditors
+            auditorCount = 0; // Reset global counter
+            if (data.auditors && data.auditors.length > 0) {
+                data.auditors.forEach(auditor => {
+                    addAuditor(); // This adds the div and increments auditorCount
+                    document.getElementById(`auditor${auditorCount}Name`).value = auditor.name || '';
+                    document.getElementById(`auditor${auditorCount}Designation`).value = auditor.designation || '';
+                });
+            } else {
+                addAuditor(); // Always ensure at least one auditor field
+            }
+
+            // Observations (Program & Finance)
+            document.getElementById('observationSections').innerHTML = ''; // Clear existing observations
+            observationCount = 0; // Reset global counter
+            if (data.observations && data.observations.length > 0) {
+                data.observations.forEach(obs => {
+                    addObservationSection(); // This adds the div and increments observationCount
+                    const currentObsNum = observationCount; // Use the latest count
+
+                    document.getElementById(`observation${currentObsNum}Type`).value = obs.type;
+                    changeObservationType(`observation${currentObsNum}`); // Apply type change to show correct fields
+
+                    if (obs.type === 'program') {
+                        document.getElementById(`observation${currentObsNum}Title`).value = obs.title || '';
+                        document.getElementById(`observation${currentObsNum}ProgramSubtype`).value = obs.subType;
+                        changeProgramObservationSubtype(`observation${currentObsNum}`); // Re-generate headers based on subtype
+
+                        const tableBody = document.getElementById(`observation${currentObsNum}Table`).getElementsByTagName('tbody')[0];
+                        tableBody.innerHTML = ''; // Clear rows before populating
+
+                        if (obs.rows && obs.rows.length > 0) {
+                            obs.rows.forEach((rowData, rIndex) => { // Use rIndex for consistent row numbering
+                                const newRow = tableBody.insertRow();
+                                // IMPORTANT: Use rIndex + 1 for IDs to maintain 1-based indexing
+                                if (obs.subType === 'loanDeficit' || obs.subType === 'savingsDeficit' || obs.subType === 'dpsDeficit' || obs.subType === 'otherDeficit') {
+                                    newRow.innerHTML = `
+                                        <td><input type="text" id="obs${currentObsNum}WorkerName${rIndex+1}" value="${rowData.workerName || ''}" class="wide-input"></td>
+                                        <td><input type="text" id="obs${currentObsNum}Society${rIndex+1}" value="${rowData.society || ''}" class="wide-input"></td>
+                                        <td><input type="text" id="obs${currentObsNum}Code${rIndex+1}" value="${rowData.code || ''}" class="wide-input"></td>
+                                        <td><input type="text" id="obs${currentObsNum}Member${rIndex+1}" value="${rowData.member || ''}" class="wide-input"></td>
+                                        <td><input type="number" id="obs${currentObsNum}PassBook${rIndex+1}" value="${rowData.passBook || ''}" class="wide-input" oninput="calculateDeficit('observation${currentObsNum}', ${rIndex+1}, '${obs.subType}')"></td>
+                                        <td><input type="number" id="obs${currentObsNum}CollectionSheet${rIndex+1}" value="${rowData.collectionSheet || ''}" class="wide-input" oninput="calculateDeficit('observation${currentObsNum}', ${rIndex+1}, '${obs.subType}')"></td>
+                                        <td><input type="number" id="obs${currentObsNum}Deficit${rIndex+1}" value="${rowData.deficit || ''}" class="wide-input" readonly></td>
+                                        <td><input type="date" id="obs${currentObsNum}DepositDate${rIndex+1}" value="${rowData.depositDate || ''}"></td>
+                                        <td><input type="number" id="obs${currentObsNum}DepositAmount${rIndex+1}" value="${rowData.depositAmount || ''}" class="wide-input" oninput="calculateRemaining('observation${currentObsNum}', ${rIndex+1}, '${obs.subType}')"></td>
+                                        <td><input type="number" id="obs${currentObsNum}Remaining${rIndex+1}" value="${rowData.remaining || ''}" class="wide-input" readonly></td>
+                                        <td><input type="text" id="obs${currentObsNum}Comment${rIndex+1}" value="${rowData.comment || ''}" class="wide-input"></td>
+                                    `;
+                                } else if (obs.subType === 'generalObservation') {
+                                    newRow.innerHTML = `
+                                        <td><input type="text" id="obs${currentObsNum}Society${rIndex+1}" value="${rowData.society || ''}" class="wide-input"></td>
+                                        <td><input type="text" id="obs${currentObsNum}Code${rIndex+1}" value="${rowData.code || ''}" class="wide-input"></td>
+                                        <td><input type="text" id="obs${currentObsNum}Member${rIndex+1}" value="${rowData.member || ''}" class="wide-input"></td>
+                                        <td><input type="date" id="obs${currentObsNum}DistDate${rIndex+1}" value="${rowData.distDate || ''}"></td>
+                                        <td><input type="number" id="obs${currentObsNum}DistAmount${rIndex+1}" value="${rowData.distAmount || ''}"></td>
+                                        <td><input type="number" id="obs${currentObsNum}LoanBalance${rIndex+1}" value="${rowData.loanBalance || ''}"></td>
+                                        <td><input type="number" id="obs${currentObsNum}SavingsBalance${rIndex+1}" value="${rowData.savingsBalance || ''}"></td>
+                                        <td><input type="number" id="obs${currentObsNum}PrevLoanAmount${rIndex+1}" value="${rowData.prevLoanAmount || ''}"></td>
+                                        <td><input type="number" id="obs${currentObsNum}PrevLoanBalance${rIndex+1}" value="${rowData.prevLoanBalance || ''}"></td>
+                                        <td><textarea id="obs${currentObsNum}Comment${rIndex+1}" oninput="this.style.height='auto'; this.style.height=(this.scrollHeight)+'px';" rows="1">${rowData.comment || ''}</textarea></td>
+                                    `;
+                                }
+                            });
+                            // Re-calculate deficits/remainings if needed after populating
+                            for(let r = 0; r < tableBody.rows.length; r++) {
+                                if (obs.type === 'program' && (obs.subType === 'loanDeficit' || obs.subType === 'savingsDeficit' || obs.subType === 'dpsDeficit' || obs.subType === 'otherDeficit')) {
+                                    calculateDeficit(`observation${currentObsNum}`, r + 1, obs.subType);
+                                }
+                            }
+                        } else {
+                            addObservationRow(`observation${currentObsNum}`); // Add a default empty row if no data
+                        }
+
+                    } else { // Finance
+                        document.getElementById(`observation${currentObsNum}FinanceTitle`).value = obs.financeTitle || '';
+                        
+                        const tableBody = document.getElementById(`observation${currentObsNum}FinanceTable`).getElementsByTagName('tbody')[0];
+                        tableBody.innerHTML = ''; // Clear rows before populating
+
+                        if (obs.rows && obs.rows.length > 0) {
+                            obs.rows.forEach((rowData, rIndex) => { // Use rIndex for consistent row numbering
+                                const newRow = tableBody.insertRow();
+                                newRow.innerHTML = `
+                                    <td><input type="text" id="finance${currentObsNum}VoucherNo${rIndex+1}" value="${rowData.voucherNo || ''}" class="wide-input"></td>
+                                    <td><input type="date" id="finance${currentObsNum}VoucherDate${rIndex+1}" value="${rowData.voucherDate || ''}"></td>
+                                    <td><input type="number" id="finance${currentObsNum}VoucherAmount${rIndex+1}" value="${rowData.voucherAmount || ''}"></td>
+                                    <td><input type="date" id="finance${currentObsNum}BillDate${rIndex+1}" value="${rowData.billDate || ''}"></td>
+                                    <td><input type="number" id="finance${currentObsNum}BillAmount${rIndex+1}" value="${rowData.billAmount || ''}"></td>
+                                    <td><input type="text" id="finance${currentObsNum}Comment${rIndex+1}" value="${rowData.comment || ''}"></td>
+                                `;
+                            });
+                        } else {
+                            addObservationRow(`observation${currentObsNum}`); // Add a default empty row if no data
+                        }
+                    }
+                });
+            } else {
+                addObservationSection(); // Always ensure at least one observation section
+            }
+
+            // Custom Tables
+            document.getElementById('customTableSections').innerHTML = ''; // Clear existing custom tables
+            customObservationCount = 0; // Reset global counter
+            if (data.customObservations && data.customObservations.length > 0) {
+                data.customObservations.forEach(customObs => {
+                    addCustomObservationSection(); // This adds the div and increments customObservationCount
+                    const currentCustomObsNum = customObservationCount; // Use the latest count
+
+                    document.getElementById(`customObs${currentCustomObsNum}Title`).value = customObs.title || '';
+                    document.getElementById(`customObs${currentCustomObsNum}Headers`).value = customObs.headers || '';
+                    updateCustomTableHeaders(`customObservation${currentCustomObsNum}`); // This will generate headers and show table
+
+                    const tableBody = document.getElementById(`customObs${currentCustomObsNum}Table`).getElementsByTagName('tbody')[0];
+                    tableBody.innerHTML = ''; // Clear rows before populating
+
+                    const headersArray = (customObs.headers || '').split(',').map(h => h.trim()).filter(h => h !== '');
+
+                    if (customObs.rows && customObs.rows.length > 0 && headersArray.length > 0) {
+                        customObs.rows.forEach((rowData, rIndex) => { // Use rIndex for consistent row numbering
+                            const newRow = tableBody.insertRow();
+                            rowData.forEach((cellData, cIndex) => {
+                                const td = document.createElement('td');
+                                const input = document.createElement('input');
+                                input.type = 'text';
+                                // IMPORTANT: Use rIndex + 1 and cIndex + 1 for IDs to maintain 1-based indexing
+                                input.id = `customObs${currentCustomObsNum}Row${rIndex+1}Col${cIndex+1}`;
+                                input.className = 'wide-input';
+                                input.value = cellData || '';
+                                td.appendChild(input);
+                                newRow.appendChild(td);
+                            });
+                        });
+                    } else if (headersArray.length > 0) {
+                        addCustomRow(`customObservation${currentCustomObsNum}`); // If headers exist but no data, add one empty row
+                    }
+                });
+            } else {
+                addCustomObservationSection(); // Always ensure at least one custom observation section
+            }
+        }
+
+        function exportReportData() {
+            const data = collectFormData();
+            const jsonString = JSON.stringify(data, null, 2); // Pretty print JSON
+            const blob = new Blob([jsonString], { type: 'application/json;charset=utf-8' });
+            saveAs(blob, 'audit_report_draft.json');
+            alert('রিপোর্ট ডেটা সফলভাবে এক্সপোর্ট করা হয়েছে!');
+        }
+
+        function importReportData(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    populateForm(importedData);
+                    alert('রিপোর্ট ডেটা সফলভাবে ইম্পোর্ট করা হয়েছে!');
+                    // Clear the file input so the same file can be imported again if needed
+                    event.target.value = ''; 
+                } catch (error) {
+                    console.error('JSON ফাইল পার্স করতে ব্যর্থ:', error);
+                    alert('ইম্পোর্ট করা ফাইলটি ভুল ফরম্যাটের। একটি বৈধ JSON ফাইল দিন।');
+                    // Clear the file input
+                    event.target.value = '';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+    </script><script>
+    // এখানে আপনার পাসওয়ার্ড সেট করুন।
+    const correctPassword = "1042"; 
+
+    function showPasswordModal() {
+        // একটি কাস্টম মডেল ডায়ালগ তৈরি করুন
+        const modal = document.createElement('div');
+        modal.style.position = 'fixed';
+        modal.style.top = '0';
+        modal.style.left = '0';
+        modal.style.width = '100%';
+        modal.style.height = '100%';
+        modal.style.backgroundColor = 'rgba(0,0,0,0.7)';
+        modal.style.display = 'flex';
+        modal.style.justifyContent = 'center';
+        modal.style.alignItems = 'center';
+        modal.style.zIndex = '9999'; // নিশ্চিত করুন এটি অন্য সবকিছুর উপরে থাকে
+
+        const modalContent = document.createElement('div');
+        modalContent.style.backgroundColor = '#fff';
+        modalContent.style.padding = '30px';
+        modalContent.style.borderRadius = '8px';
+        modalContent.style.boxShadow = '0 4px 8px rgba(0,0,0,0.2)';
+        modalContent.style.textAlign = 'center';
+        modalContent.style.width = '300px';
+
+        const message = document.createElement('p');
+        message.textContent = "এই ফাইলটি খুলতে পাসওয়ার্ড দিন:";
+        message.style.marginBottom = '15px';
+        message.style.fontSize = '1.1em';
+
+        const passwordInput = document.createElement('input');
+        passwordInput.type = 'password';
+        passwordInput.placeholder = 'পাসওয়ার্ড লিখুন';
+        passwordInput.style.width = 'calc(100% - 20px)'; // প্যাডিং এর জন্য একটু কম
+        passwordInput.style.padding = '10px';
+        passwordInput.style.marginBottom = '15px';
+        passwordInput.style.border = '1px solid #ccc';
+        passwordInput.style.borderRadius = '4px';
+
+        const submitButton = document.createElement('button');
+        submitButton.textContent = 'প্রবেশ করুন';
+        submitButton.style.padding = '10px 20px';
+        submitButton.style.backgroundColor = '#007bff';
+        submitButton.style.color = '#fff';
+        submitButton.style.border = 'none';
+        submitButton.style.borderRadius = '4px';
+        submitButton.style.cursor = 'pointer';
+        submitButton.style.marginRight = '10px';
+
+        const cancelButton = document.createElement('button');
+        cancelButton.textContent = 'বাতিল করুন';
+        cancelButton.style.padding = '10px 20px';
+        cancelButton.style.backgroundColor = '#dc3545';
+        cancelButton.style.color = '#fff';
+        cancelButton.style.border = 'none';
+        cancelButton.style.borderRadius = '4px';
+        cancelButton.style.cursor = 'pointer';
+
+        modalContent.appendChild(message);
+        modalContent.appendChild(passwordInput);
+        modalContent.appendChild(document.createElement('br')); // লাইন ব্রেক
+        modalContent.appendChild(submitButton);
+        modalContent.appendChild(cancelButton);
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // পাসওয়ার্ড ইনপুট ফিল্ডে ফোকাস করুন
+        passwordInput.focus();
+
+        // সাবমিট বাটন ক্লিক ইভেন্ট
+        submitButton.addEventListener('click', () => {
+            checkPassword(passwordInput.value, modal);
+        });
+
+        // এন্টার কী প্রেস ইভেন্ট
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                checkPassword(passwordInput.value, modal);
+            }
+        });
+
+        // বাতিল বাটন ক্লিক ইভেন্ট
+        cancelButton.addEventListener('click', () => {
+            window.location.href = "about:blank"; // একটি খালি পেজে রিডাইরেক্ট করুন
+            document.body.removeChild(modal); // মডেল সরিয়ে দিন
+        });
+    }
+
+    function checkPassword(enteredPassword, modalElement) {
+        if (enteredPassword === correctPassword) {
+            document.body.removeChild(modalElement); // মডেল সরিয়ে দিন
+            // পাসওয়ার্ড সঠিক হলে ফাইলটি অ্যাক্সেস করার অনুমতি দিন
+        } else {
+            alert("ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।");
+            passwordInput.value = ''; // ইনপুট ফিল্ড খালি করুন
+            passwordInput.focus(); // আবার ফোকাস করুন
+        }
+    }
+
+    // যখন ডকুমেন্ট লোড হবে, তখন পাসওয়ার্ড চাওয়া শুরু করুন।
+    document.addEventListener('DOMContentLoaded', showPasswordModal);
+</script>
+</body>
+</html>
